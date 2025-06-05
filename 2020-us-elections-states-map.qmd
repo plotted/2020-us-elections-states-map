@@ -1,0 +1,245 @@
+---
+title: "2020 U.S. Presidential Election Results"
+author: "Gaston Sanchez"
+date: "Jun 4, 2025"
+format: 
+  html:
+    toc: true
+    number-sections: true
+    theme: zephyr
+embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+```
+
+
+```{r pkgs, message = FALSE, echo = FALSE}
+library(tidyverse) # ecosystem of data science packages
+library(sf)        # simple features
+library(usmap)     # map of US with Alaska and Hawaii
+library(ggiraph)   # make ggplots interactive
+```
+
+
+# Description
+
+The data visualization of this module is based on the map of electoral votes 
+that appears in the following New York Times webpage (Nov 3, 2020):
+
+__Presidential Election Results 2020__
+
+<https://www.nytimes.com/interactive/2020/11/03/us/elections/results-president.html>
+
+![2020 Presidential Election Results by State](source/presidential-elections-map-states-2020.png)
+
+
+\
+
+## Details (datasheet)
+
+- __Topic(s)__: 
+  + Politics 
+  + Elections
+  + President
+  + U.S.
+- __Data__:
+  + Size: medium data
+  + Format: data in CSV tables
+  + Requires merging data
+- __Graphic__:
+  + Type: map
+  + Styles: ggplot, interactive ggiraph 
+  + Interactive: yes
+
+
+## R Packages
+
+```{r pkgs, eval = FALSE}
+```
+
+
+-----
+
+
+# Data
+
+This modules requires the CSV file `countypres_2000-2020.csv` which is 
+stored in the `data/` folder accompanying the github repo of this qmd file.
+
+
+## Presidential Elections data
+
+First we import the Presidential Election Returns 2000-2020 data.
+Keep in mind that we are only interested in the 2020 elections. Also, because
+the data has votes at the county level, we need to compute the total number of
+votes for each candidate by state, and determine the winner party.
+
+```{r}
+# data of presidential results (2000-2020)
+pres_results = read_csv("data/countypres_2000-2020.csv")
+
+# party winner in every state, 2020
+state_by_party = pres_results |> 
+  filter(year == 2020) |> 
+  group_by(state_po, party) |>
+  summarize(votes = sum(candidatevotes)) |> 
+  slice_max(votes) |> 
+  select(state_po, party)
+
+head(state_by_party)
+```
+
+
+## Merging Data
+
+```{r}
+# merging tiles map data with winner party
+us_states = us_map() |> 
+  inner_join(state_by_party, by = c("abbr" = "state_po"))
+```
+
+
+-----
+
+
+# Graphics
+
+Recall that the `tiles_map` data frame has the data to graph the electoral 
+votes map. To plot this map with `ggplot()` all you have to do is add a 
+`geom_tile()` layer, hence the name _tiles map_.
+
+
+## Map 1
+
+Let's start with a basic graph of the tiles map, plotting the tiles that 
+correspond to each state.
+
+```{r}
+ggplot(us_states) +
+  geom_sf(aes(fill = party))
+```
+
+
+## Map 2
+
+Because `tiles_map` has been merged with `state_by_party`, we also have the
+winner `party` of each state. Therefore, we can _map_ this variable to the
+`fill` aesthetic to color-code the tiles according to party
+
+```{r}
+ggplot(us_states) +
+  geom_sf(aes(fill = party), color = "white") +
+  scale_fill_manual(values = c("#0077cc", "#cc2200"))
+```
+
+
+## Map 3
+
+Adding labels of states (i.e. state abbreviation)
+
+```{r}
+ggplot(us_states) +
+  geom_sf(aes(fill = party), color = "white") +
+  geom_sf_text(aes(label = abbr), size = 2, color = "white") +
+  scale_fill_manual(values = c("#0077cc", "#cc2200"))
+```
+
+
+
+## Map 4
+
+Taking care of the rest of details
+
+```{r}
+ggplot(us_states) +
+  geom_sf(aes(fill = party), color = "white") +
+  geom_sf_text(aes(label = abbr), size = 2, color = "white") +
+  scale_fill_manual(values = c("#0077cc", "#cc2200")) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 6),
+        legend.key.size = unit(0.5, 'cm'),
+        legend.title = element_blank())
+```
+
+
+## Map 5
+
+We can make the map interactive by using functions from `"ggiraph"`. In this
+case, the function `geom_sf_interactive()` allows us to display a _tooltip_
+feature when we hover over a particular state, namely, the display of the 
+winner `party`.
+
+```{r}
+gg1 = ggplot(us_states) +
+  geom_sf_interactive(aes(fill = party, tooltip = party), color = "white") +
+  geom_sf_text(aes(label = abbr), size = 2, color = "white") +
+  scale_fill_manual(values = c("#0077cc", "#cc2200")) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 6),
+        legend.key.size = unit(0.5, 'cm'),
+        legend.title = element_blank())
+
+girafe(ggobj = gg1)
+```
+
+
+## Mpa 6
+
+It would be better to have a more informative message displayed by the _tooltip_,
+for instance, to be able to display the name of the state, as well as the 
+proportion of votes for each party. This requires more data manipulation so
+that we know the proportion of votes that each party obtained in each state.
+
+The following pipeline gives us such a table:
+
+```{r}
+# proportion of votes by party in each state
+state_by_party_prop = pres_results |> 
+  filter(year == 2020) |> 
+  group_by(state_po, party) |>
+  summarize(votes = sum(candidatevotes)) |> 
+  mutate(prop = round(100 * votes / sum(votes), 2)) |> 
+  filter(party %in% c("DEMOCRAT", "REPUBLICAN")) |> 
+  select(state_po, party, prop) |> 
+  pivot_wider(names_from = party, values_from = prop) |> 
+  mutate(winner = ifelse(DEMOCRAT - REPUBLICAN > 0, "DEM", "REP"))
+
+head(state_by_party_prop)
+```
+
+
+As we've done before, the next step involves merging the `us_map()` data
+table with the `state_by_party_prop` information:
+
+```{r}
+# merging tiles map data with proportion-of-votes data
+us_states2 = us_map() |> 
+  inner_join(state_by_party_prop, by = c("abbr" = "state_po"))
+```
+
+
+We can create again the interactive plot specifying a _tooltip_ feature that
+displays the `full` name of the State, together with the percentage of votes
+for both parties.
+
+```{r}
+gg2 = ggplot(us_states2) +
+  geom_sf_interactive(
+    aes(fill = winner, 
+        tooltip = sprintf("%s\nDem: %s%%\nRep: %s%%", full, DEMOCRAT, REPUBLICAN)), 
+    color = "white") +
+  geom_sf_text(aes(label = abbr), size = 2, color = "white") +
+  scale_fill_manual(values = c("#0077cc", "#cc2200")) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 6),
+        legend.key.size = unit(0.5, 'cm'),
+        legend.title = element_blank())
+
+girafe(ggobj = gg2)
+```
+
