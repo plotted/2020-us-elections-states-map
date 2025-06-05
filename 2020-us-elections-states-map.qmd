@@ -49,7 +49,7 @@ __Presidential Election Results 2020__
   + Format: data in CSV tables
   + Requires merging data
 - __Graphic__:
-  + Type: map
+  + Type: choropleth map
   + Styles: ggplot, interactive ggiraph 
   + Interactive: yes
 
